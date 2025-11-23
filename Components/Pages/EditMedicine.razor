@@ -1,0 +1,188 @@
+@page "/edit-medicine/{Id}"
+@using MedicineReminder.Models
+@using MedicineReminder.Services
+@inject DataService DataService
+@inject INotificationService NotificationService
+@inject NavigationManager Navigation
+
+<div class="form-container">
+    <h2>✏️ Редактировать лекарство</h2>
+
+    @if (medicine != null)
+    {
+        <EditForm Model="medicine" OnValidSubmit="HandleSubmit">
+            <div class="form-group">
+                <label>Название лекарства *</label>
+                <InputText @bind-Value="medicine.Name" class="form-control" placeholder="Например: Аспирин" />
+                @if (string.IsNullOrWhiteSpace(medicine.Name) && showValidation)
+                {
+                    <span class="validation-error">Введите название</span>
+                }
+            </div>
+
+            <div class="form-group">
+                <label>Дозировка *</label>
+                <InputText @bind-Value="medicine.Dosage" class="form-control" placeholder="Например: 1 таблетка" />
+                @if (string.IsNullOrWhiteSpace(medicine.Dosage) && showValidation)
+                {
+                    <span class="validation-error">Введите дозировку</span>
+                }
+            </div>
+
+            <div class="form-group">
+                <label>Частота приёма *</label>
+                <InputText @bind-Value="medicine.Frequency" class="form-control" placeholder="Например: 2 раза в день" />
+                @if (string.IsNullOrWhiteSpace(medicine.Frequency) && showValidation)
+                {
+                    <span class="validation-error">Введите частоту</span>
+                }
+            </div>
+
+            <div class="form-group">
+                <label>Время приёма *</label>
+                <InputDate Type="InputDateType.Time" @bind-Value="medicine.Time" class="form-control" />
+            </div>
+
+            <div class="form-group">
+                <label>Дата начала</label>
+                <InputDate @bind-Value="medicine.StartDate" class="form-control" />
+            </div>
+
+            <div class="form-group">
+                <label>Дата окончания (необязательно)</label>
+                <InputDate @bind-Value="endDate" class="form-control" />
+            </div>
+
+            <div class="form-group">
+                <label>Дни недели</label>
+                <div class="days-selector">
+                    @foreach (DayOfWeek day in Enum.GetValues(typeof(DayOfWeek)))
+                    {
+                        <label class="day-checkbox">
+                            <input type="checkbox" 
+                                   checked="@medicine.SelectedDays.Contains(day)"
+                                   @onchange="@(e => ToggleDay(day, (bool)e.Value!))" />
+                            <span>@GetDayName(day)</span>
+                        </label>
+                    }
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Заметки</label>
+                <InputTextArea @bind-Value="medicine.Notes" class="form-control" rows="3" placeholder="Дополнительная информация..." />
+            </div>
+
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <InputCheckbox @bind-Value="medicine.IsActive" />
+                    <span>Активно</span>
+                </label>
+            </div>
+
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger">@errorMessage</div>
+            }
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-success">💾 Сохранить</button>
+                <button type="button" class="btn btn-secondary" @onclick="Cancel">❌ Отмена</button>
+            </div>
+        </EditForm>
+    }
+    else
+    {
+        <p>Загрузка...</p>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string Id { get; set; } = string.Empty;
+
+    private Medicine? medicine;
+    private DateTime? endDate;
+    private bool showValidation = false;
+    private string errorMessage = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Guid.TryParse(Id, out var id))
+        {
+            medicine = await DataService.GetMedicineByIdAsync(id);
+            if (medicine != null)
+            {
+                endDate = medicine.EndDate;
+            }
+        }
+    }
+
+    private void ToggleDay(DayOfWeek day, bool isChecked)
+    {
+        if (medicine == null) return;
+
+        if (isChecked && !medicine.SelectedDays.Contains(day))
+        {
+            medicine.SelectedDays.Add(day);
+        }
+        else if (!isChecked && medicine.SelectedDays.Contains(day))
+        {
+            medicine.SelectedDays.Remove(day);
+        }
+    }
+
+    private async Task HandleSubmit()
+    {
+        if (medicine == null) return;
+
+        showValidation = true;
+        errorMessage = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(medicine.Name) || 
+            string.IsNullOrWhiteSpace(medicine.Dosage) || 
+            string.IsNullOrWhiteSpace(medicine.Frequency))
+        {
+            errorMessage = "Заполните все обязательные поля";
+            return;
+        }
+
+        try
+        {
+            medicine.EndDate = endDate;
+
+            await DataService.UpdateMedicineAsync(medicine);
+            await DataService.GenerateRemindersForMedicineAsync(medicine);
+
+            // Перепланируем уведомления
+            var reminders = await DataService.GetRemindersByMedicineIdAsync(medicine.Id);
+            foreach (var reminder in reminders.Where(r => !r.IsCompleted))
+            {
+                await NotificationService.ScheduleNotificationAsync(reminder, medicine);
+            }
+
+            Navigation.NavigateTo("/medicines");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Ошибка сохранения: {ex.Message}";
+        }
+    }
+
+    private void Cancel() => Navigation.NavigateTo("/medicines");
+
+    private string GetDayName(DayOfWeek day)
+    {
+        return day switch
+        {
+            DayOfWeek.Monday => "Пн",
+            DayOfWeek.Tuesday => "Вт",
+            DayOfWeek.Wednesday => "Ср",
+            DayOfWeek.Thursday => "Чт",
+            DayOfWeek.Friday => "Пт",
+            DayOfWeek.Saturday => "Сб",
+            DayOfWeek.Sunday => "Вс",
+            _ => day.ToString()
+        };
+    }
+}

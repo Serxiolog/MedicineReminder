@@ -1,0 +1,125 @@
+@page "/reminders"
+@using MedicineReminder.Models
+@using MedicineReminder.Services
+@inject DataService DataService
+@inject NavigationManager Navigation
+
+<div class="reminders-container">
+    <div class="page-header">
+        <h2>⏰ Предстоящие приёмы</h2>
+        <button class="btn btn-secondary" @onclick="GoBack">
+            ← Назад
+        </button>
+    </div>
+
+    @if (groupedReminders.Any())
+    {
+        @foreach (var group in groupedReminders)
+        {
+            <div class="reminder-group">
+                <h3 class="group-date">@GetDateLabel(group.Key)</h3>
+                <div class="reminder-items">
+                    @foreach (var reminder in group.Value)
+                    {
+                        var medicine = medicines.FirstOrDefault(m => m.Id == reminder.MedicineId);
+                        if (medicine != null)
+                        {
+                            <div class="reminder-card @(reminder.IsCompleted ? "completed" : "")">
+                                <div class="reminder-time-badge">
+                                    @reminder.ScheduledTime.ToString("HH:mm")
+                                </div>
+                                <div class="reminder-info">
+                                    <h4>@medicine.Name</h4>
+                                    <p>@medicine.Dosage</p>
+                                    @if (!string.IsNullOrEmpty(medicine.Notes))
+                                    {
+                                        <p class="reminder-notes">@medicine.Notes</p>
+                                    }
+                                </div>
+                                <div class="reminder-status">
+                                    @if (reminder.IsCompleted)
+                                    {
+                                        <span class="status-completed">
+                                            ✓ Принято
+                                            @if (reminder.CompletedTime.HasValue)
+                                            {
+                                                <span>(@reminder.CompletedTime.Value.ToString("HH:mm"))</span>
+                                            }
+                                        </span>
+                                    }
+                                    else if (reminder.ScheduledTime < DateTime.Now)
+                                    {
+                                        <div class="status-actions">
+                                            <span class="status-overdue">⚠️ Пропущено</span>
+                                            <button class="btn btn-sm btn-success" @onclick="() => CompleteReminder(reminder.Id)">
+                                                Отметить
+                                            </button>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="status-upcoming">📅 Предстоит</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        }
+    }
+    else
+    {
+        <div class="empty-state">
+            <p>📭 Нет предстоящих напоминаний</p>
+            <button class="btn btn-primary" @onclick="GoToAddMedicine">
+                Добавить лекарство
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Medicine> medicines = new();
+    private Dictionary<DateTime, List<Reminder>> groupedReminders = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        medicines = await DataService.GetAllMedicinesAsync();
+        var allReminders = await DataService.GetAllRemindersAsync();
+
+        // Группируем напоминания по датам
+        groupedReminders = allReminders
+            .Where(r => r.ScheduledTime >= DateTime.Today.AddDays(-7)) // Показываем за последние 7 дней
+            .OrderBy(r => r.ScheduledTime)
+            .GroupBy(r => r.ScheduledTime.Date)
+            .ToDictionary(g => g.Key, g => g.ToList());
+    }
+
+    private async Task CompleteReminder(Guid reminderId)
+    {
+        await DataService.MarkReminderAsCompletedAsync(reminderId);
+        await LoadData();
+    }
+
+    private string GetDateLabel(DateTime date)
+    {
+        var today = DateTime.Today;
+        if (date == today)
+            return "Сегодня";
+        if (date == today.AddDays(1))
+            return "Завтра";
+        if (date == today.AddDays(-1))
+            return "Вчера";
+        
+        return date.ToString("dd MMMM yyyy", new System.Globalization.CultureInfo("ru-RU"));
+    }
+
+    private void GoBack() => Navigation.NavigateTo("/");
+    private void GoToAddMedicine() => Navigation.NavigateTo("/add-medicine");
+}

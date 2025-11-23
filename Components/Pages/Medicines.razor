@@ -1,0 +1,136 @@
+@page "/medicines"
+@using MedicineReminder.Models
+@using MedicineReminder.Services
+@inject DataService DataService
+@inject NavigationManager Navigation
+
+<div class="medicines-container">
+    <div class="page-header">
+        <h2>📋 Мои лекарства</h2>
+        <button class="btn btn-primary" @onclick="GoToAddMedicine">
+            ➕ Добавить
+        </button>
+    </div>
+
+    @if (medicines.Any())
+    {
+        <div class="medicines-list">
+            @foreach (var medicine in medicines)
+            {
+                <div class="medicine-card @(medicine.IsActive ? "" : "inactive")">
+                    <div class="medicine-header">
+                        <h3>@medicine.Name</h3>
+                        <span class="badge @(medicine.IsActive ? "badge-active" : "badge-inactive")">
+                            @(medicine.IsActive ? "Активно" : "Неактивно")
+                        </span>
+                    </div>
+                    
+                    <div class="medicine-details">
+                        <div class="detail-item">
+                            <span class="detail-label">💊 Дозировка:</span>
+                            <span>@medicine.Dosage</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">⏰ Время:</span>
+                            <span>@medicine.Time.ToString("HH:mm")</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">📅 Частота:</span>
+                            <span>@medicine.Frequency</span>
+                        </div>
+                        @if (medicine.SelectedDays.Any())
+                        {
+                            <div class="detail-item">
+                                <span class="detail-label">📆 Дни:</span>
+                                <span>@string.Join(", ", medicine.SelectedDays.Select(d => GetDayName(d)))</span>
+                            </div>
+                        }
+                        @if (!string.IsNullOrEmpty(medicine.Notes))
+                        {
+                            <div class="detail-item">
+                                <span class="detail-label">📝 Заметки:</span>
+                                <span>@medicine.Notes</span>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="medicine-actions">
+                        <button class="btn btn-sm btn-info" @onclick="() => EditMedicine(medicine.Id)">
+                            ✏️ Изменить
+                        </button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteMedicine(medicine.Id)">
+                            🗑️ Удалить
+                        </button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="empty-state">
+            <p>У вас пока нет добавленных лекарств</p>
+            <button class="btn btn-primary" @onclick="GoToAddMedicine">
+                Добавить первое лекарство
+            </button>
+        </div>
+    }
+
+    <div class="navigation-buttons">
+        <button class="btn btn-secondary" @onclick="GoBack">
+            ← Назад
+        </button>
+    </div>
+</div>
+
+@code {
+    private List<Medicine> medicines = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMedicines();
+    }
+
+    private async Task LoadMedicines()
+    {
+        medicines = await DataService.GetAllMedicinesAsync();
+    }
+
+    private void EditMedicine(Guid id)
+    {
+        Navigation.NavigateTo($"/edit-medicine/{id}");
+    }
+
+    private async Task DeleteMedicine(Guid id)
+    {
+        if (await ConfirmDelete())
+        {
+            await DataService.DeleteMedicineAsync(id);
+            await LoadMedicines();
+        }
+    }
+
+    private async Task<bool> ConfirmDelete()
+    {
+        // В реальном приложении здесь должен быть диалог подтверждения
+        return await Task.FromResult(true);
+    }
+
+    private void GoToAddMedicine() => Navigation.NavigateTo("/add-medicine");
+    private void GoBack() => Navigation.NavigateTo("/");
+
+    private string GetDayName(DayOfWeek day)
+    {
+        return day switch
+        {
+            DayOfWeek.Monday => "Пн",
+            DayOfWeek.Tuesday => "Вт",
+            DayOfWeek.Wednesday => "Ср",
+            DayOfWeek.Thursday => "Чт",
+            DayOfWeek.Friday => "Пт",
+            DayOfWeek.Saturday => "Сб",
+            DayOfWeek.Sunday => "Вс",
+            _ => day.ToString()
+        };
+    }
+}

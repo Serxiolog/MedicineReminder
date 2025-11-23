@@ -1,0 +1,100 @@
+@page "/"
+@using MedicineReminder.Models
+@using MedicineReminder.Services
+@inject DataService DataService
+@inject NavigationManager Navigation
+
+<div class="home-container">
+    <div class="button-group">
+        <button class="btn btn-primary" @onclick="GoToMedicines">
+            📋 Мои лекарства
+        </button>
+        <button class="btn btn-success" @onclick="GoToReminders">
+            ⏰ Предстоящие приёмы
+        </button>
+        <button class="btn btn-info" @onclick="GoToAddMedicine">
+            ➕ Добавить лекарство
+        </button>
+    </div>
+
+    <div class="info-section">
+        <h3>Сегодняшние напоминания</h3>
+        @if (todayReminders.Any())
+        {
+            <ul class="reminder-list">
+                @foreach (var reminder in todayReminders)
+                {
+                    var medicine = medicines.FirstOrDefault(m => m.Id == reminder.MedicineId);
+                    if (medicine != null)
+                    {
+                        <li class="reminder-item @(reminder.IsCompleted ? "completed" : "")">
+                            <div class="reminder-time">@reminder.ScheduledTime.ToString("HH:mm")</div>
+                            <div class="reminder-details">
+                                <strong>@medicine.Name</strong>
+                                <span>@medicine.Dosage</span>
+                            </div>
+                            @if (!reminder.IsCompleted)
+                            {
+                                <button class="btn-complete" @onclick="() => CompleteReminder(reminder.Id)">✓</button>
+                            }
+                            else
+                            {
+                                <span class="completed-badge">Принято</span>
+                            }
+                        </li>
+                    }
+                }
+            </ul>
+        }
+        else
+        {
+            <p class="empty-message">На сегодня напоминаний нет</p>
+        }
+    </div>
+
+    <div class="stats-section">
+        <div class="stat-card">
+            <div class="stat-number">@medicines.Count</div>
+            <div class="stat-label">Лекарств в списке</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">@upcomingCount</div>
+            <div class="stat-label">Предстоящих приёмов</div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<Medicine> medicines = new();
+    private List<Reminder> todayReminders = new();
+    private int upcomingCount = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        medicines = await DataService.GetAllMedicinesAsync();
+        var allReminders = await DataService.GetAllRemindersAsync();
+        
+        var today = DateTime.Today;
+        todayReminders = allReminders
+            .Where(r => r.ScheduledTime.Date == today)
+            .OrderBy(r => r.ScheduledTime)
+            .ToList();
+
+        upcomingCount = allReminders.Count(r => !r.IsCompleted && r.ScheduledTime > DateTime.Now);
+    }
+
+    private async Task CompleteReminder(Guid reminderId)
+    {
+        await DataService.MarkReminderAsCompletedAsync(reminderId);
+        await LoadData();
+    }
+
+    private void GoToMedicines() => Navigation.NavigateTo("/medicines");
+    private void GoToReminders() => Navigation.NavigateTo("/reminders");
+    private void GoToAddMedicine() => Navigation.NavigateTo("/add-medicine");
+}
